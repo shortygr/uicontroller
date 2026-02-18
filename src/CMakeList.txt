@@ -1,0 +1,5 @@
+idf_component_register(
+    SRCS "spi_setup.c"
+    INCLUDE_DIRS "."
+    REQUIRES driver esp_lcd
+)

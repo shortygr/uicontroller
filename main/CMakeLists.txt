@@ -1,3 +1,12 @@
-idf_component_register(SRCS "main.c"
-                    INCLUDE_DIRS "."
-                    REQUIRES lvgl esp_lcd driver)
+idf_component_register(
+    SRCS 
+        "main.c"
+        "../src/spi_setup.c"
+    INCLUDE_DIRS 
+        "."
+        "../src"
+     REQUIRES 
+        lvgl
+        esp_lcd
+        driver
+    )
