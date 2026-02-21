@@ -9,6 +9,7 @@
 static const char *TAG = "CST816D";
 
 // LVGL input device callback
+
 static void cst816d_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
     static uint32_t callback_count = 0;
