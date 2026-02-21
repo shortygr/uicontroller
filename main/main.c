@@ -9,8 +9,11 @@
 #include "esp_lcd_panel_vendor.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "spi_setup.h"
+#include "cst816d.h"
+#include "ui.h"
 
 // Tag for console logging
 static const char *TAG = "uicontroller";
@@ -25,6 +28,13 @@ static const char *TAG = "uicontroller";
 #define LCD_BL_GPIO 46
 #define POWER1_GPIO 1
 #define POWER2_GPIO 2   
+
+// CST816D Touch Configuration
+#define TOUCH_I2C_NUM I2C_NUM_0
+#define TOUCH_I2C_SCL_GPIO 7
+#define TOUCH_I2C_SDA_GPIO 6
+#define TOUCH_INT_GPIO 5
+#define TOUCH_RST_GPIO 13
 
 
 
@@ -121,8 +131,9 @@ void app_main(void)
     ESP_LOGI(TAG, "LCD panel reset");
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
     ESP_LOGI(TAG, "LCD panel initialized");
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));
-    ESP_LOGI(TAG, "Color inversion enabled");
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, false));
+    ESP_LOGI(TAG, "Color inversion disabled");
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false)); // horizontal, vertical
     // Mirror the display (adjust parameters as needed)
 
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
@@ -131,6 +142,30 @@ void app_main(void)
 //    ESP_LOGI(TAG, "Turn on LCD backlight");
     gpio_set_level(SCREEN_BACKLIGHT_PIN, EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
     ESP_LOGI(TAG, "Backlight turned on to level %d", EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
+
+    // Initialize I2C bus for CST816D touch
+    i2c_master_bus_config_t i2c_mst_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = TOUCH_I2C_NUM,
+        .scl_io_num = TOUCH_I2C_SCL_GPIO,
+        .sda_io_num = TOUCH_I2C_SDA_GPIO,
+        .glitch_ignore_cnt = 7,
+        .flags = {
+            .enable_internal_pullup = true,
+        },
+    };
+
+    i2c_master_bus_handle_t i2c_mst_handle = NULL;
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &i2c_mst_handle));
+    ESP_LOGI(TAG, "I2C master bus initialized on pins SCL=%d, SDA=%d", TOUCH_I2C_SCL_GPIO, TOUCH_I2C_SDA_GPIO);
+
+    // Initialize CST816D touch sensor
+    cst816d_handle_t *touch_handle = cst816d_init(i2c_mst_handle, TOUCH_INT_GPIO, TOUCH_RST_GPIO, LCD_H_RES, LCD_V_RES);
+    if (!touch_handle) {
+        ESP_LOGE(TAG, "Failed to initialize CST816D touch sensor");
+    } else {
+        ESP_LOGI(TAG, "CST816D touch sensor initialized");
+    }
 
     // Setup LVGL display buffer
 
@@ -157,16 +192,26 @@ void app_main(void)
     lv_display_set_flush_cb(disp, lvgl_flush_cb);
     ESP_LOGI(TAG, "LVGL display buffers and callbacks configured");
 
-    
-    // Create LVGL display
+    // Register CST816D touch sensor NOW (after display is created)
+    if (touch_handle) {
+        lv_indev_t *indev = cst816d_register_lvgl_indev(touch_handle);
+        if (indev) {
+            // Associate input device with display
+            lv_indev_set_display(indev, disp);
+            ESP_LOGI(TAG, "CST816D input device registered and associated with display");
+        }
+    }
 
-    // Simple test UI
+    // Create LVGL display
+    ui_init();
+
+/*     // Simple test UI
     lv_obj_t *scr = lv_display_get_screen_active(disp);
     lv_obj_t *label = lv_label_create(scr);
     lv_label_set_text_static(label, LV_SYMBOL_REFRESH"Hello, LVGL!");
     lv_obj_set_style_text_color(label, lv_color_hex(0xFF0000), LV_PART_MAIN);
     lv_obj_center(label);
-    ESP_LOGI(TAG, "UI test label created");
+    ESP_LOGI(TAG, "UI test label created"); */
 
     // Start LVGL handler in its own FreeRTOS task so it yields properly
 //    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 4096, NULL, 5, NULL, 1);
